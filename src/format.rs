@@ -25,7 +25,8 @@ pub fn escape_markdown(text: &str) -> String {
 }
 
 pub fn format_prices_with_flags(prices: &HashMap<Region, u32>) -> String {
-    let price_entries: Vec<_> = prices.iter().collect();
+    let mut price_entries: Vec<_> = prices.iter().collect();
+    price_entries.sort_by_key(|(r, _)| Region::VARIANTS.iter().position(|v| v == *r).unwrap_or(usize::MAX));
 
     match price_entries.as_slice() {
         [(region, price)] => format!("{} {price}", region.flag()),
