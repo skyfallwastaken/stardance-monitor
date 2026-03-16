@@ -56,10 +56,10 @@ pub fn format_price_line(prices: &HashMap<Region, u32>) -> String {
 }
 
 pub fn item_description(desc: &str) -> String {
-    if desc.is_empty() {
+    if desc.trim().is_empty() {
         String::new()
     } else {
-        format!("_{}_\n", escape_markdown(desc))
+        format!("{desc}\n")
     }
 }
 
@@ -74,11 +74,15 @@ pub fn format_accessories(accessories: &[Accessory]) -> String {
         accessories
             .iter()
             .map(|a| {
-                format!(
-                    "{} ({EMOJI_COOKIES} {})",
-                    escape_markdown(&a.name),
-                    format_prices_with_flags(&a.prices)
-                )
+                if a.prices.values().all(|&p| p == 0) {
+                    format!("{} (free)", escape_markdown(&a.name))
+                } else {
+                    format!(
+                        "{} ({EMOJI_COOKIES} {})",
+                        escape_markdown(&a.name),
+                        format_prices_with_flags(&a.prices)
+                    )
+                }
             })
             .collect::<Vec<_>>()
             .join(", ")
@@ -103,7 +107,7 @@ pub fn format_achievement_lock(achievement_lock: Option<String>) -> String {
 
 pub fn format_long_description(desc: Option<&String>) -> String {
     match desc {
-        Some(s) if !s.is_empty() => format!("_{}_", escape_markdown(s)),
+        Some(s) if !s.trim().is_empty() => s.clone(),
         _ => "_none_".to_string(),
     }
 }

@@ -86,7 +86,8 @@ fn summarize_long_description_change(
         "temperature": 0.3
     });
 
-    let response = crate::scraper::CLIENT
+    let client = reqwest::blocking::Client::new();
+    let response = client
         .post(&url)
         .header("Authorization", format!("Bearer {api_key}"))
         .json(&body)
@@ -126,14 +127,14 @@ fn render_updated_item(old: &ShopItem, new: &ShopItem) -> Vec<SlackBlock> {
         (false, false) if old.description == new.description => item_description(&new.description),
         _ => {
             let old_desc = if old.description.is_empty() {
-                "_no description_"
+                "_no description_".to_string()
             } else {
-                &escape_markdown(&old.description)
+                old.description.clone()
             };
             let new_desc = if new.description.is_empty() {
-                "_no description_"
+                "_no description_".to_string()
             } else {
-                &escape_markdown(&new.description)
+                new.description.clone()
             };
             format!("{old_desc} → {new_desc}\n")
         }

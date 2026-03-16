@@ -121,7 +121,7 @@ fn select_one<'a>(element: &'a ElementRef, selector: &str) -> Result<ElementRef<
 
 fn parse_shop_item(element: ElementRef, region: &Region) -> Result<ShopItem> {
     let title = select_one(&element, "h4")?.inner_html();
-    let description = select_one(&element, "div.shop-item-card__description > p")?.inner_html();
+    let description = crate::mrkdwn::html_to_mrkdwn(select_one(&element, "div.shop-item-card__description > p")?);
     let price: u32 = select_one(&element, "span.shop-item-card__price")?
         .text()
         .collect::<String>()
@@ -188,7 +188,7 @@ fn scrape_item_details_for_region(item_id: ShopItemId, region: &Region) -> Resul
 
     let long_description = select_one(&root, ".markdown-content")
         .ok()
-        .map(|elem| elem.text().collect::<Vec<_>>().join("").trim().to_string())
+        .map(|elem| crate::mrkdwn::html_to_mrkdwn(elem))
         .filter(|s| !s.is_empty());
 
     let remaining_stock = select_one(&root, ".shop-order__stock-indicator span")
