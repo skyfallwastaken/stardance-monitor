@@ -3,6 +3,7 @@ use log::{info, warn};
 
 mod config;
 mod diff;
+mod format;
 mod rails;
 mod scraper;
 mod storage;
