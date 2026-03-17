@@ -225,7 +225,7 @@ fn render_updated_item(old: &ShopItem, new: &ShopItem) -> Vec<SlackBlock> {
 
 fn render_channel_ping() -> Vec<SlackBlock> {
     vec![SlackContextBlock::new(vec![SlackContextBlockElement::MarkDown(md!(format!(
-        "pinging <!here> · <https://github.com/skyfallwastaken/flavortown-tracker|{EMOJI_STAR} star the repo!> · <https://hackclub.slack.com/archives/C091UF79VDM|{EMOJI_ROBOT} discord/slackbot ysws>"
+        "pinging... nobody? god i'm tired... · <https://github.com/skyfallwastaken/flavortown-tracker|{EMOJI_STAR} star the repo!> · <https://hackclub.slack.com/archives/C091UF79VDM|{EMOJI_ROBOT} discord/slackbot ysws>"
     )))]).into()]
 }
 
