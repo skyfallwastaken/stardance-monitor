@@ -8,7 +8,7 @@ pub const EMOJI_TROLLEY: &str = ":tw_shopping_trolley:";
 pub const EMOJI_NEW: &str = ":new:";
 pub const EMOJI_TRASH: &str = ":win10-trash:";
 pub const EMOJI_STAR: &str = ":star:";
-pub const EMOJI_ROBOT: &str = ":robot_face:";
+pub const EMOJI_CRAB: &str = ":tw_crab:";
 pub const EMOJI_MEDAL: &str = ":tw_medal:";
 
 pub fn prices_changed(old: &HashMap<Region, u32>, new: &HashMap<Region, u32>) -> bool {
