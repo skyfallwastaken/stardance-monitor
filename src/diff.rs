@@ -305,6 +305,34 @@ fn send_blocks(blocks: Vec<SlackBlock>, fallback_text: &str) -> Result<()> {
     Ok(())
 }
 
+/// Returns true if the update has a "significant" stock change that warrants a channel ping:
+/// going from 1 -> out of stock, or from out of stock -> any positive/unlimited.
+fn is_significant_stock_change(old: &ShopItem, new: &ShopItem) -> bool {
+    matches!(
+        (old.remaining_stock, new.remaining_stock),
+        (Some(1), Some(0)) | (Some(0), Some(1..)) | (Some(0), None)
+    )
+}
+
+/// Returns true if the update changed something beyond just stock numbers,
+/// short/long descriptions, and images.
+fn has_significant_non_stock_change(old: &ShopItem, new: &ShopItem) -> bool {
+    old.title != new.title
+        || prices_changed(&old.prices, &new.prices)
+        || old.accessories != new.accessories
+        || old.achievement_lock != new.achievement_lock
+}
+
+fn should_ping_channel(diff: &ItemDiff) -> bool {
+    if !diff.new_items.is_empty() || !diff.deleted_items.is_empty() {
+        return true;
+    }
+
+    diff.updated_items.iter().any(|(old, new)| {
+        has_significant_non_stock_change(old, new) || is_significant_stock_change(old, new)
+    })
+}
+
 pub fn send_webhook_notifications(diff: &ItemDiff) -> Result<()> {
     let mut item_block_groups: Vec<Vec<SlackBlock>> = Vec::new();
 
@@ -348,7 +376,9 @@ pub fn send_webhook_notifications(diff: &ItemDiff) -> Result<()> {
         }
     }
 
-    current_blocks.extend(render_channel_ping());
+    if should_ping_channel(diff) {
+        current_blocks.extend(render_channel_ping());
+    }
     send_blocks(current_blocks, &fallback_text)?;
 
     info!("Successfully sent webhook notifications");
