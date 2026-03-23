@@ -175,6 +175,7 @@ fn fetch_item_detail_page(item_id: ShopItemId) -> Result<String> {
 }
 
 struct ItemDetails {
+    price: u32,
     long_description: Option<String>,
     accessories: Vec<Accessory>,
     remaining_stock: Option<u32>,
@@ -185,6 +186,11 @@ fn scrape_item_details_for_region(item_id: ShopItemId, region: &Region) -> Resul
     let html = fetch_item_detail_page(item_id)?;
     let document = Html::parse_document(&html);
     let root = document.root_element();
+
+    let price: u32 = select_one(&root, "[data-order-form-base-ticket-cost-value]")?
+        .attr("data-order-form-base-ticket-cost-value")
+        .ok_or_else(|| eyre!("missing base ticket cost for item {item_id}"))?
+        .parse()?;
 
     let long_description = select_one(&root, ".markdown-content")
         .ok()
@@ -243,6 +249,7 @@ fn scrape_item_details_for_region(item_id: ShopItemId, region: &Region) -> Resul
     }
 
     Ok(ItemDetails {
+        price,
         long_description,
         accessories,
         remaining_stock,
@@ -250,7 +257,9 @@ fn scrape_item_details_for_region(item_id: ShopItemId, region: &Region) -> Resul
     })
 }
 
-fn merge_item_details(item: &mut ShopItem, details: ItemDetails) {
+fn merge_item_details(item: &mut ShopItem, details: ItemDetails, region: &Region) {
+    item.prices.insert(region.clone(), details.price);
+
     if item.long_description.is_none() {
         item.long_description = details.long_description;
     }
@@ -327,9 +336,6 @@ pub fn scrape() -> Result<Vec<ShopItem>> {
         for item in &region_items {
             items
                 .entry(item.id)
-                .and_modify(|e| {
-                    e.prices.insert(region.clone(), item.prices[region]);
-                })
                 .or_insert_with(|| item.clone());
         }
 
@@ -340,7 +346,7 @@ pub fn scrape() -> Result<Vec<ShopItem>> {
             .collect::<Result<Vec<_>>>()?;
 
         for (id, detail) in details {
-            merge_item_details(items.get_mut(&id).unwrap(), detail);
+            merge_item_details(items.get_mut(&id).unwrap(), detail, region);
         }
     }
 
