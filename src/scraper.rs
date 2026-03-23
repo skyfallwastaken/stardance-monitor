@@ -182,48 +182,14 @@ struct ItemDetails {
     achievement_lock: Option<String>,
 }
 
-fn parse_shop_item_from_detail_page(html: &str, item_id: ShopItemId) -> Result<ShopItem> {
-    let document = Html::parse_document(html);
-    let root = document.root_element();
-    let view = select_one(&root, ".shop-order__view")?;
-
-    let title = select_one(&view, "h2")?.inner_html();
-    let description = select_one(&view, ".shop-order__description")
-        .ok()
-        .map(|elem| crate::mrkdwn::html_to_mrkdwn(elem))
-        .unwrap_or_default();
-    let image_url: Url = select_one(&view, ".shop-order__image img")?
-        .attr("src")
-        .ok_or_else(|| eyre!("missing image src on detail page for item {item_id}"))?
-        .parse()?;
-    let image_id = crate::rails::get_rails_blob_id(&image_url)?;
-
-    Ok(ShopItem {
-        title,
-        description,
-        id: item_id,
-        image_url,
-        image_id,
-        prices: HashMap::new(),
-        long_description: None,
-        accessories: Vec::new(),
-        remaining_stock: None,
-        achievement_lock: None,
-    })
-}
-
 fn scrape_item_details_for_region(item_id: ShopItemId, region: &Region) -> Result<ItemDetails> {
     let html = fetch_item_detail_page(item_id)?;
-    scrape_item_details_from_html(&html, region)
-}
-
-fn scrape_item_details_from_html(html: &str, region: &Region) -> Result<ItemDetails> {
-    let document = Html::parse_document(html);
+    let document = Html::parse_document(&html);
     let root = document.root_element();
 
     let price: u32 = select_one(&root, "[data-order-form-base-ticket-cost-value]")?
         .attr("data-order-form-base-ticket-cost-value")
-        .ok_or_else(|| eyre!("missing base ticket cost"))?
+        .ok_or_else(|| eyre!("missing base ticket cost for item {item_id}"))?
         .parse()?;
 
     let long_description = select_one(&root, ".markdown-content")
@@ -381,47 +347,6 @@ pub fn scrape() -> Result<Vec<ShopItem>> {
 
         for (id, detail) in details {
             merge_item_details(items.get_mut(&id).unwrap(), detail, region);
-        }
-    }
-
-    // backfill items that weren't listed on the shop page for some regions
-    let missing: Vec<(ShopItemId, Vec<&Region>)> = items
-        .iter()
-        .filter_map(|(&id, item)| {
-            let missing_regions: Vec<_> = Region::VARIANTS
-                .iter()
-                .filter(|r| !item.prices.contains_key(r))
-                .collect();
-            if missing_regions.is_empty() {
-                None
-            } else {
-                Some((id, missing_regions))
-            }
-        })
-        .collect();
-
-    for (id, regions) in missing {
-        for region in regions {
-            debug!("Backfilling item {id} for {region:?}");
-            set_region(region, &csrf_token)?;
-            match fetch_item_detail_page(id) {
-                Ok(html) => {
-                    if !items.contains_key(&id) {
-                        match parse_shop_item_from_detail_page(&html, id) {
-                            Ok(item) => { items.insert(id, item); }
-                            Err(e) => {
-                                debug!("Failed to parse detail page for item {id} in {region:?}: {e}");
-                                continue;
-                            }
-                        }
-                    }
-                    match scrape_item_details_from_html(&html, region) {
-                        Ok(details) => merge_item_details(items.get_mut(&id).unwrap(), details, region),
-                        Err(e) => debug!("Failed to scrape details for item {id} in {region:?}: {e}"),
-                    }
-                }
-                Err(e) => debug!("Item {id} not available in {region:?}: {e}"),
-            }
         }
     }
 
