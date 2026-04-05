@@ -2,10 +2,13 @@ use std::collections::HashMap;
 
 use crate::config::CONFIG;
 use crate::format::*;
-use crate::scraper::{ShopItem, ShopItems};
+use crate::scraper::{ShopItem, ShopItemId, ShopItems};
 use color_eyre::Result;
 use log::{debug, info};
 use slack_morphism::prelude::*;
+
+/// Item IDs that should be tracked in snapshots but never included in notifications.
+const NOTIFICATION_IGNORED_IDS: &[ShopItemId] = &[187, 209, 204];
 
 fn render_new_item(item: &ShopItem) -> Vec<SlackBlock> {
     let achievement_line = format!(
@@ -323,13 +326,29 @@ fn has_significant_non_stock_change(old: &ShopItem, new: &ShopItem) -> bool {
         || old.achievement_lock != new.achievement_lock
 }
 
+fn is_notification_ignored(id: ShopItemId) -> bool {
+    NOTIFICATION_IGNORED_IDS.contains(&id)
+}
+
 fn should_ping_channel(diff: &ItemDiff) -> bool {
-    if !diff.new_items.is_empty() || !diff.deleted_items.is_empty() {
+    if diff
+        .new_items
+        .iter()
+        .any(|item| !is_notification_ignored(item.id))
+    {
+        return true;
+    }
+    if diff
+        .deleted_items
+        .iter()
+        .any(|item| !is_notification_ignored(item.id))
+    {
         return true;
     }
 
     diff.updated_items.iter().any(|(old, new)| {
-        has_significant_non_stock_change(old, new) || is_significant_stock_change(old, new)
+        !is_notification_ignored(new.id)
+            && (has_significant_non_stock_change(old, new) || is_significant_stock_change(old, new))
     })
 }
 
@@ -337,18 +356,35 @@ pub fn send_webhook_notifications(diff: &ItemDiff) -> Result<()> {
     let mut item_block_groups: Vec<Vec<SlackBlock>> = Vec::new();
 
     for item in &diff.new_items {
+        if is_notification_ignored(item.id) {
+            debug!("Skipping notification for ignored item: {}", item.title);
+            continue;
+        }
         info!("Sending notification for new item: {}", item.title);
         item_block_groups.push(render_new_item(item));
     }
 
     for (old_item, new_item) in &diff.updated_items {
+        if is_notification_ignored(new_item.id) {
+            debug!("Skipping notification for ignored item: {}", new_item.title);
+            continue;
+        }
         info!("Sending notification for updated item: {}", new_item.title);
         item_block_groups.push(render_updated_item(old_item, new_item));
     }
 
     for item in &diff.deleted_items {
+        if is_notification_ignored(item.id) {
+            debug!("Skipping notification for ignored item: {}", item.title);
+            continue;
+        }
         info!("Sending notification for deleted item: {}", item.title);
         item_block_groups.push(render_deleted_item(item));
+    }
+
+    if item_block_groups.is_empty() {
+        info!("No notifiable item changes after filtering ignored items");
+        return Ok(());
     }
 
     let fallback_text = format!(
