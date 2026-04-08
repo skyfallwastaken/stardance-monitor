@@ -120,19 +120,42 @@ fn select_one<'a>(element: &'a ElementRef, selector: &str) -> Result<ElementRef<
 }
 
 fn parse_shop_item(element: ElementRef, region: &Region) -> Result<ShopItem> {
-    let title = select_one(&element, "h4")?.inner_html();
-    let description = crate::mrkdwn::html_to_mrkdwn(select_one(&element, "div.shop-item-card__description > p")?);
-    let price: u32 = select_one(&element, "span.shop-item-card__price")?
-        .text()
-        .collect::<String>()
-        .chars()
-        .filter(char::is_ascii_digit)
-        .collect::<String>()
-        .parse()?;
-    let image_url: Url = select_one(&element, "div.shop-item-card__image > img")?
-        .attr("src")
-        .ok_or_else(|| eyre!("missing image src"))?
-        .parse()?;
+    let title = element
+        .attr("data-shop-wishlist-item-name-value")
+        .map(String::from)
+        .or_else(|| select_one(&element, "h4").ok().map(|e| e.inner_html()))
+        .ok_or_else(|| eyre!("missing item title"))?;
+    let description = select_one(&element, "div.shop-item-card__description > p")
+        .or_else(|_| select_one(&element, "div.shop-item-card__description"))
+        .map(|el| crate::mrkdwn::html_to_mrkdwn(el))
+        .unwrap_or_default();
+    let price: u32 = element
+        .attr("data-shop-wishlist-item-price-value")
+        .and_then(|v| v.parse().ok())
+        .or_else(|| {
+            select_one(&element, "span.shop-item-card__price")
+                .ok()
+                .and_then(|e| {
+                    e.text()
+                        .collect::<String>()
+                        .chars()
+                        .filter(char::is_ascii_digit)
+                        .collect::<String>()
+                        .parse()
+                        .ok()
+                })
+        })
+        .ok_or_else(|| eyre!("missing price for item"))?;
+    let image_url: Url = element
+        .attr("data-shop-wishlist-item-image-value")
+        .and_then(|v| CONFIG.base_url.join(v).ok())
+        .or_else(|| {
+            select_one(&element, "div.shop-item-card__image > img")
+                .ok()
+                .and_then(|e| e.attr("src"))
+                .and_then(|s| s.parse().ok())
+        })
+        .ok_or_else(|| eyre!("missing image url"))?;
     let image_id = crate::rails::get_rails_blob_id(&image_url)?;
     let id = element
         .attr("data-shop-id")
