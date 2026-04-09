@@ -2,13 +2,182 @@ use std::collections::HashMap;
 
 use crate::config::CONFIG;
 use crate::format::*;
-use crate::scraper::{ShopItem, ShopItemId, ShopItems};
+use crate::scraper::{Accessory, ShopItem, ShopItemId, ShopItems};
 use color_eyre::Result;
 use log::{debug, info};
 use slack_morphism::prelude::*;
 
 /// Item IDs that should be tracked in snapshots but never included in notifications.
 const NOTIFICATION_IGNORED_IDS: &[ShopItemId] = &[187, 209, 204];
+
+/// Stock threshold: only notify about stock changes when either old or new is at or below this.
+const STOCK_NOTIFY_THRESHOLD: u32 = 7;
+
+/// Accessory names that are colours and should be ignored in notifications.
+const COLOUR_NAMES: &[&str] = &[
+    "black", "white", "blue", "red", "green", "purple", "grey", "gray",
+    "silver", "gold", "orange", "yellow", "pink", "violet", "indigo",
+    "beige", "blush", "citrus", "sage", "lavender", "bubblegum",
+    "starlight", "space grey", "off-white", "carbon black",
+    "living coral (red/orange)",
+];
+
+// ---------------------------------------------------------------------------
+// Notification filtering — single place that decides what's worth notifying
+// ---------------------------------------------------------------------------
+
+fn is_colour_name(name: &str) -> bool {
+    COLOUR_NAMES.iter().any(|c| name.eq_ignore_ascii_case(c))
+}
+
+fn is_free(acc: &Accessory) -> bool {
+    acc.prices.values().all(|&p| p == 0)
+}
+
+/// An accessory change is ignorable when the name is a colour, or both sides are free.
+fn is_ignorable_accessory(old: Option<&Accessory>, new: Option<&Accessory>) -> bool {
+    let name = new.or(old).map(|a| a.name.as_str()).unwrap_or("");
+    if is_colour_name(name) {
+        return true;
+    }
+    matches!((old, new), (Some(o), Some(n)) if is_free(o) && is_free(n))
+}
+
+/// A stock change is notifiable when either side is ≤ threshold or involves unlimited.
+fn is_notifiable_stock(old: Option<u32>, new: Option<u32>) -> bool {
+    match (old, new) {
+        (Some(o), Some(n)) if o == n => false,
+        (None, None) => false,
+        (None, Some(_)) | (Some(_), None) => true,
+        (Some(o), Some(n)) => o <= STOCK_NOTIFY_THRESHOLD || n <= STOCK_NOTIFY_THRESHOLD,
+    }
+}
+
+/// Pre-filtered view of an `ItemDiff` containing only changes worth notifying about.
+struct NotifiableDiff<'a> {
+    new_items: Vec<&'a ShopItem>,
+    deleted_items: Vec<&'a ShopItem>,
+    /// (old, new, accessories_changed, stock_changed)
+    updated_items: Vec<UpdateContext<'a>>,
+}
+
+struct UpdateContext<'a> {
+    old: &'a ShopItem,
+    new: &'a ShopItem,
+    accessories_changed: bool,
+    /// Accessory change involves a non-free price change (warrants a channel ping).
+    accessories_price_changed: bool,
+    stock_changed: bool,
+}
+
+impl<'a> UpdateContext<'a> {
+    /// True if something beyond stock/description/image changed (warrants a channel ping).
+    fn has_significant_change(&self) -> bool {
+        self.old.title != self.new.title
+            || prices_changed(&self.old.prices, &self.new.prices)
+            || self.accessories_price_changed
+            || self.old.achievement_lock != self.new.achievement_lock
+    }
+
+    /// True if stock went to/from zero (warrants a channel ping).
+    fn has_critical_stock_change(&self) -> bool {
+        self.stock_changed
+            && matches!(
+                (self.old.remaining_stock, self.new.remaining_stock),
+                (Some(1), Some(0)) | (Some(0), Some(1..)) | (Some(0), None)
+            )
+    }
+}
+
+impl<'a> NotifiableDiff<'a> {
+    fn from(diff: &'a ItemDiff) -> Self {
+        let new_items = diff
+            .new_items
+            .iter()
+            .filter(|i| !NOTIFICATION_IGNORED_IDS.contains(&i.id))
+            .collect();
+
+        let deleted_items = diff
+            .deleted_items
+            .iter()
+            .filter(|i| !NOTIFICATION_IGNORED_IDS.contains(&i.id))
+            .collect();
+
+        let updated_items = diff
+            .updated_items
+            .iter()
+            .filter(|(_, new)| !NOTIFICATION_IGNORED_IDS.contains(&new.id))
+            .map(|(old, new)| {
+                let accessories_changed = accessories_notifiably_changed(&old.accessories, &new.accessories);
+                let accessories_price_changed = accessories_changed
+                    && accessories_have_price_change(&old.accessories, &new.accessories);
+                let stock_changed = is_notifiable_stock(old.remaining_stock, new.remaining_stock);
+                UpdateContext { old, new, accessories_changed, accessories_price_changed, stock_changed }
+            })
+            .collect();
+
+        Self { new_items, deleted_items, updated_items }
+    }
+
+    fn should_ping_channel(&self) -> bool {
+        !self.new_items.is_empty()
+            || !self.deleted_items.is_empty()
+            || self.updated_items.iter().any(|u| u.has_significant_change() || u.has_critical_stock_change())
+    }
+}
+
+/// True if the notifiable accessory changes include any non-free price difference
+/// (i.e. not just adding/removing free accessories).
+fn accessories_have_price_change(old: &[Accessory], new: &[Accessory]) -> bool {
+    let old_map: HashMap<usize, &Accessory> = old.iter().map(|a| (a.id, a)).collect();
+    let new_map: HashMap<usize, &Accessory> = new.iter().map(|a| (a.id, a)).collect();
+
+    for (id, acc) in &new_map {
+        if !old_map.contains_key(id) && !is_free(acc) {
+            return true;
+        }
+    }
+    for (id, acc) in &old_map {
+        if !new_map.contains_key(id) && !is_free(acc) {
+            return true;
+        }
+    }
+    for (id, new_acc) in &new_map {
+        if let Some(old_acc) = old_map.get(id) {
+            if old_acc.prices != new_acc.prices && !(is_free(old_acc) && is_free(new_acc)) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn accessories_notifiably_changed(old: &[Accessory], new: &[Accessory]) -> bool {
+    if old == new {
+        return false;
+    }
+    let old_map: HashMap<usize, &Accessory> = old.iter().map(|a| (a.id, a)).collect();
+    let new_map: HashMap<usize, &Accessory> = new.iter().map(|a| (a.id, a)).collect();
+
+    for (id, acc) in &new_map {
+        if !old_map.contains_key(id) && !is_ignorable_accessory(None, Some(acc)) {
+            return true;
+        }
+    }
+    for (id, acc) in &old_map {
+        if !new_map.contains_key(id) && !is_ignorable_accessory(Some(acc), None) {
+            return true;
+        }
+    }
+    for (id, new_acc) in &new_map {
+        if let Some(old_acc) = old_map.get(id) {
+            if old_acc != new_acc && !is_ignorable_accessory(Some(old_acc), Some(new_acc)) {
+                return true;
+            }
+        }
+    }
+    false
+}
 
 fn render_new_item(item: &ShopItem) -> Vec<SlackBlock> {
     let achievement_line = format!(
@@ -108,7 +277,9 @@ fn summarize_long_description_change(
         .map(|s| s.trim().to_string())
 }
 
-fn render_updated_item(old: &ShopItem, new: &ShopItem) -> Vec<SlackBlock> {
+fn render_updated_item(ctx: &UpdateContext) -> Vec<SlackBlock> {
+    let (old, new) = (ctx.old, ctx.new);
+
     let title = if old.title != new.title {
         format!("{} → {}", old.title, new.title)
     } else {
@@ -160,7 +331,7 @@ fn render_updated_item(old: &ShopItem, new: &ShopItem) -> Vec<SlackBlock> {
         String::new()
     };
 
-    let accessories_line = if old.accessories != new.accessories {
+    let accessories_line = if ctx.accessories_changed {
         format!(
             "*Accessories:* {} → {}\n",
             format_accessories(&old.accessories),
@@ -170,7 +341,7 @@ fn render_updated_item(old: &ShopItem, new: &ShopItem) -> Vec<SlackBlock> {
         String::new()
     };
 
-    let stock_line = if old.remaining_stock != new.remaining_stock {
+    let stock_line = if ctx.stock_changed {
         format!(
             "*Stock:* {} → {}\n",
             format_stock(old.remaining_stock),
@@ -308,76 +479,22 @@ fn send_blocks(blocks: Vec<SlackBlock>, fallback_text: &str) -> Result<()> {
     Ok(())
 }
 
-/// Returns true if the update has a "significant" stock change that warrants a channel ping:
-/// going from 1 -> out of stock, or from out of stock -> any positive/unlimited.
-fn is_significant_stock_change(old: &ShopItem, new: &ShopItem) -> bool {
-    matches!(
-        (old.remaining_stock, new.remaining_stock),
-        (Some(1), Some(0)) | (Some(0), Some(1..)) | (Some(0), None)
-    )
-}
-
-/// Returns true if the update changed something beyond just stock numbers,
-/// short/long descriptions, and images.
-fn has_significant_non_stock_change(old: &ShopItem, new: &ShopItem) -> bool {
-    old.title != new.title
-        || prices_changed(&old.prices, &new.prices)
-        || old.accessories != new.accessories
-        || old.achievement_lock != new.achievement_lock
-}
-
-fn is_notification_ignored(id: ShopItemId) -> bool {
-    NOTIFICATION_IGNORED_IDS.contains(&id)
-}
-
-fn should_ping_channel(diff: &ItemDiff) -> bool {
-    if diff
-        .new_items
-        .iter()
-        .any(|item| !is_notification_ignored(item.id))
-    {
-        return true;
-    }
-    if diff
-        .deleted_items
-        .iter()
-        .any(|item| !is_notification_ignored(item.id))
-    {
-        return true;
-    }
-
-    diff.updated_items.iter().any(|(old, new)| {
-        !is_notification_ignored(new.id)
-            && (has_significant_non_stock_change(old, new) || is_significant_stock_change(old, new))
-    })
-}
-
 pub fn send_webhook_notifications(diff: &ItemDiff) -> Result<()> {
+    let notifiable = NotifiableDiff::from(diff);
+
     let mut item_block_groups: Vec<Vec<SlackBlock>> = Vec::new();
 
-    for item in &diff.new_items {
-        if is_notification_ignored(item.id) {
-            debug!("Skipping notification for ignored item: {}", item.title);
-            continue;
-        }
+    for item in &notifiable.new_items {
         info!("Sending notification for new item: {}", item.title);
         item_block_groups.push(render_new_item(item));
     }
 
-    for (old_item, new_item) in &diff.updated_items {
-        if is_notification_ignored(new_item.id) {
-            debug!("Skipping notification for ignored item: {}", new_item.title);
-            continue;
-        }
-        info!("Sending notification for updated item: {}", new_item.title);
-        item_block_groups.push(render_updated_item(old_item, new_item));
+    for ctx in &notifiable.updated_items {
+        info!("Sending notification for updated item: {}", ctx.new.title);
+        item_block_groups.push(render_updated_item(ctx));
     }
 
-    for item in &diff.deleted_items {
-        if is_notification_ignored(item.id) {
-            debug!("Skipping notification for ignored item: {}", item.title);
-            continue;
-        }
+    for item in &notifiable.deleted_items {
         info!("Sending notification for deleted item: {}", item.title);
         item_block_groups.push(render_deleted_item(item));
     }
@@ -389,12 +506,13 @@ pub fn send_webhook_notifications(diff: &ItemDiff) -> Result<()> {
 
     let fallback_text = format!(
         "Shop update: {} new, {} updated, {} removed",
-        diff.new_items.len(),
-        diff.updated_items.len(),
-        diff.deleted_items.len()
+        notifiable.new_items.len(),
+        notifiable.updated_items.len(),
+        notifiable.deleted_items.len()
     );
 
     let mut current_blocks: Vec<SlackBlock> = Vec::new();
+    let total_groups = item_block_groups.len();
 
     for (i, group) in item_block_groups.into_iter().enumerate() {
         let group_size = group.len() + 1; // +1 for divider
@@ -407,12 +525,12 @@ pub fn send_webhook_notifications(diff: &ItemDiff) -> Result<()> {
         }
 
         current_blocks.extend(group);
-        if i < diff.new_items.len() + diff.updated_items.len() + diff.deleted_items.len() - 1 {
+        if i < total_groups - 1 {
             current_blocks.push(SlackDividerBlock::new().into());
         }
     }
 
-    if should_ping_channel(diff) {
+    if notifiable.should_ping_channel() {
         current_blocks.extend(render_channel_ping());
     }
     send_blocks(current_blocks, &fallback_text)?;
