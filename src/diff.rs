@@ -15,10 +15,31 @@ const STOCK_NOTIFY_THRESHOLD: u32 = 7;
 
 /// Accessory names that are colours and should be ignored in notifications.
 const COLOUR_NAMES: &[&str] = &[
-    "black", "white", "blue", "red", "green", "purple", "grey", "gray",
-    "silver", "gold", "orange", "yellow", "pink", "violet", "indigo",
-    "beige", "blush", "citrus", "sage", "lavender", "bubblegum",
-    "starlight", "space grey", "off-white", "carbon black",
+    "black",
+    "white",
+    "blue",
+    "red",
+    "green",
+    "purple",
+    "grey",
+    "gray",
+    "silver",
+    "gold",
+    "orange",
+    "yellow",
+    "pink",
+    "violet",
+    "indigo",
+    "beige",
+    "blush",
+    "citrus",
+    "sage",
+    "lavender",
+    "bubblegum",
+    "starlight",
+    "space grey",
+    "off-white",
+    "carbon black",
     "living coral (red/orange)",
 ];
 
@@ -87,6 +108,16 @@ impl<'a> UpdateContext<'a> {
                 (Some(1), Some(0)) | (Some(0), Some(1..)) | (Some(0), None)
             )
     }
+
+    fn is_notifiable(&self) -> bool {
+        self.has_significant_change()
+            || self.has_critical_stock_change()
+            || self.accessories_changed
+            || self.stock_changed
+            || self.old.description != self.new.description
+            || self.old.long_description != self.new.long_description
+            || self.old.image_url != self.new.image_url
+    }
 }
 
 impl<'a> NotifiableDiff<'a> {
@@ -108,21 +139,36 @@ impl<'a> NotifiableDiff<'a> {
             .iter()
             .filter(|(_, new)| !NOTIFICATION_IGNORED_IDS.contains(&new.id))
             .map(|(old, new)| {
-                let accessories_changed = accessories_notifiably_changed(&old.accessories, &new.accessories);
+                let accessories_changed =
+                    accessories_notifiably_changed(&old.accessories, &new.accessories);
                 let accessories_price_changed = accessories_changed
                     && accessories_have_price_change(&old.accessories, &new.accessories);
                 let stock_changed = is_notifiable_stock(old.remaining_stock, new.remaining_stock);
-                UpdateContext { old, new, accessories_changed, accessories_price_changed, stock_changed }
+                UpdateContext {
+                    old,
+                    new,
+                    accessories_changed,
+                    accessories_price_changed,
+                    stock_changed,
+                }
             })
+            .filter(|ctx| ctx.is_notifiable())
             .collect();
 
-        Self { new_items, deleted_items, updated_items }
+        Self {
+            new_items,
+            deleted_items,
+            updated_items,
+        }
     }
 
     fn should_ping_channel(&self) -> bool {
         !self.new_items.is_empty()
             || !self.deleted_items.is_empty()
-            || self.updated_items.iter().any(|u| u.has_significant_change() || u.has_critical_stock_change())
+            || self
+                .updated_items
+                .iter()
+                .any(|u| u.has_significant_change() || u.has_critical_stock_change())
     }
 }
 
