@@ -445,7 +445,7 @@ fn render_updated_item(ctx: &UpdateContext) -> Vec<SlackBlock> {
 
 fn render_channel_ping() -> Vec<SlackBlock> {
     vec![SlackContextBlock::new(vec![SlackContextBlockElement::MarkDown(md!(format!(
-        "pinging <!channel>. bing bong! · <https://github.com/skyfallwastaken/stardance-tracker|{EMOJI_STAR} star the repo!> · <https://hackclub.enterprise.slack.com/archives/C0AFY7A312P|{EMOJI_CRAB} rust ysws!>"
+        "pinging <!channel>. bing bong! · <https://github.com/skyfallwastaken/stardance-monitor|{EMOJI_STAR} star the repo!> · <https://hackclub.enterprise.slack.com/archives/C0AFY7A312P|{EMOJI_CRAB} rust ysws!>"
     )))]).into()]
 }
 

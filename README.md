@@ -1,4 +1,4 @@
-# stardance Monitor
+# Stardance Monitor
 
 _From the creators of Flavortown Tracker & [SOM Monitor](https://go.skyfall.dev/som-monitor)_
 
@@ -9,8 +9,8 @@ Tracks the stardance shop for price updates and new items.
 Clone the repo:
 
 ```bash
-git clone https://github.com/skyfallwastaken/stardance-tracker
-cd stardance-tracker
+git clone https://github.com/skyfallwastaken/stardance-monitor
+cd stardance-monitor
 ```
 
 Configure the `.env`:
