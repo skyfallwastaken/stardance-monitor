@@ -33,9 +33,9 @@ USER appuser
 WORKDIR /app
 
 COPY --from=builder /app/stardance_monitor /app/stardance_monitor
-COPY --chown=appuser:appuser scripts/run-every-5min.sh /app/run-every-5min.sh
-RUN chmod +x /app/run-every-5min.sh
+COPY --chown=appuser:appuser scripts/loop.sh /app/loop.sh
+RUN chmod +x /app/loop.sh
 
 EXPOSE 8080
 
-ENTRYPOINT ["/app/run-every-5min.sh"]
+ENTRYPOINT ["/app/loop.sh"]

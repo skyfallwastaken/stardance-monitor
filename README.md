@@ -26,6 +26,6 @@ STORAGE_PATH= # optional - defaults to `stardance-storage` folder in working dir
 Then run:
 
 ```bash
-chmod +x ./scripts/run-every-5min.sh
-./scripts/run-every-5min.sh
+chmod +x ./scripts/loop.sh
+./scripts/loop.sh
 ```
