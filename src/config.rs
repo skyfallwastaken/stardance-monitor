@@ -30,11 +30,11 @@ fn default_user_agent() -> String {
 }
 
 fn default_base_url() -> Url {
-    Url::parse("https://flavortown.hackclub.com/").unwrap()
+    Url::parse("https://stardance.hackclub.com/").unwrap()
 }
 
 fn default_storage_path() -> PathBuf {
-    std::env::current_dir().unwrap().join("flavortown-storage")
+    std::env::current_dir().unwrap().join("stardance-storage")
 }
 
 fn default_cdn_key() -> String {

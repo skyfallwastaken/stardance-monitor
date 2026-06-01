@@ -1,4 +1,6 @@
 /target
 .env
-/flavortown-storage
+/stardance-storage
 .DS_Store
+.amp/
+.claude/

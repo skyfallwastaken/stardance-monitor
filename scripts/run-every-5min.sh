@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-PROG=/app/flavortown_tracker
+PROG=/app/stardance_tracker
 
 if [ ! -x "$PROG" ]; then
   echo "Executable $PROG not found or not executable" >&2

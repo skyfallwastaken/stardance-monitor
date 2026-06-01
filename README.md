@@ -1,26 +1,26 @@
-# Flavortown Tracker
+# stardance Monitor
 
-_From the creators of [SOM Monitor](https://go.skyfall.dev/som-monitor)_
+_From the creators of Flavortown Tracker & [SOM Monitor](https://go.skyfall.dev/som-monitor)_
 
-Tracks the Flavortown shop for price updates and new items.
+Tracks the stardance shop for price updates and new items.
 
 ## Setup
 
 Clone the repo:
 
 ```bash
-git clone https://github.com/skyfallwastaken/flavortown-tracker
-cd flavortown-tracker
+git clone https://github.com/skyfallwastaken/stardance-tracker
+cd stardance-tracker
 ```
 
 Configure the `.env`:
 
 ```env
-COOKIE= # flavortown.hackclub.com cookie
+COOKIE= # stardance.hackclub.com cookie
 WEBHOOK_URL= # slack webhook url
 USER_AGENT= # optional
-BASE_URL= # optional - defaults to flavortown's prod instance
-STORAGE_PATH= # optional - defaults to `flavortown-storage` folder in working dir
+BASE_URL= # optional - defaults to stardance's prod instance
+STORAGE_PATH= # optional - defaults to `stardance-storage` folder in working dir
 ```
 
 Then run:

@@ -106,9 +106,12 @@ pub struct ShopItem {
 
 impl ShopItem {
     pub fn buy_link(&self) -> Url {
-        let mut url = CONFIG.base_url.join("shop/order").unwrap();
-        url.set_query(Some(format!("shop_item_id={}", self.id).as_str()));
-        url
+        CONFIG
+            .base_url
+            .join("shop/items")
+            .unwrap()
+            .join(self.id.to_string().as_str())
+            .unwrap()
     }
 }
 
@@ -181,7 +184,7 @@ fn parse_shop_item(element: ElementRef, region: &Region) -> Result<ShopItem> {
 
 fn fetch_shop_page() -> Result<String> {
     let res = CLIENT
-        .get(CONFIG.base_url.join("shop")?)
+        .get(CONFIG.base_url.join("shop/category/all")?)
         .send()?
         .error_for_status()?;
     assert_eq!(res.status(), StatusCode::OK);
@@ -189,9 +192,7 @@ fn fetch_shop_page() -> Result<String> {
 }
 
 fn fetch_item_detail_page(item_id: ShopItemId) -> Result<String> {
-    let url = CONFIG
-        .base_url
-        .join(&format!("shop/order?shop_item_id={item_id}"))?;
+    let url = CONFIG.base_url.join(&format!("shop/items/{item_id}"))?;
     let res = CLIENT.get(url).send()?.error_for_status()?;
     assert_eq!(res.status(), StatusCode::OK);
     res.text().map_err(Into::into)
@@ -205,7 +206,10 @@ struct ItemDetails {
     achievement_lock: Option<String>,
 }
 
-fn scrape_item_details_for_region(item_id: ShopItemId, region: &Region) -> Result<ItemDetails> {
+fn scrape_item_page_details_for_region(
+    item_id: ShopItemId,
+    region: &Region,
+) -> Result<ItemDetails> {
     let html = fetch_item_detail_page(item_id)?;
     let document = Html::parse_document(&html);
     let root = document.root_element();
@@ -235,17 +239,13 @@ fn scrape_item_details_for_region(item_id: ShopItemId, region: &Region) -> Resul
             }
         });
 
-    let achievement_lock = select_one(&root, ".shop-order__achievement-requirement")
+    let achievement_lock = select_one(&root, "span.shop-order__achievement-name")
         .ok()
         .map(|elem| {
             let text = elem.text().collect::<String>();
-            let text = text.trim();
-            text.replace("Unlocked via \"", "")
-                .replace("\" achievement", "")
-                .replace("Requires \"", "")
-                .replace("to purchase", "")
-                .trim()
-                .to_string()
+            // let text = text.trim();
+            // text.replace("Requires: ", "").trim().to_string()
+            text.trim().to_string()
         });
 
     let label_selector = Selector::parse(".shop-order__accessory-option-label").unwrap();
@@ -316,7 +316,7 @@ fn get_csrf_token() -> Result<String> {
 
 fn set_region(region: &Region, csrf_token: &str) -> Result<()> {
     let res = CLIENT
-        .patch(CONFIG.base_url.join("shop/update_region")?)
+        .patch(CONFIG.base_url.join("shop/region")?)
         .header("X-CSRF-Token", csrf_token)
         .form(&[("region", region.code())])
         .send()?
@@ -334,7 +334,7 @@ fn scrape_region(region: &Region, csrf_token: &str) -> Result<ShopItems> {
     // step 1: region selection
     let selected_region = select_one(
         &root,
-        "button.dropdown__button > span.dropdown__selected > span.dropdown__char-span",
+        "div.shop-category__filters > div.dropdown:nth-of-type(4) > select.dropdown__select > option[selected]",
     )?
     .text()
     .next()
@@ -357,15 +357,13 @@ pub fn scrape() -> Result<Vec<ShopItem>> {
         let region_items = scrape_region(region, &csrf_token)?;
 
         for item in &region_items {
-            items
-                .entry(item.id)
-                .or_insert_with(|| item.clone());
+            items.entry(item.id).or_insert_with(|| item.clone());
         }
 
         let item_ids: Vec<_> = region_items.iter().map(|i| i.id).collect();
         let details: Vec<_> = item_ids
             .par_iter()
-            .map(|&id| scrape_item_details_for_region(id, region).map(|d| (id, d)))
+            .map(|&id| scrape_item_page_details_for_region(id, region).map(|d| (id, d)))
             .collect::<Result<Vec<_>>>()?;
 
         for (id, detail) in details {

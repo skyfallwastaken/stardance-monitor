@@ -21,8 +21,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
-    cargo build --release --locked --bin flavortown_tracker && \
-    cp /app/target/release/flavortown_tracker /app/flavortown_tracker
+    cargo build --release --locked --bin stardance && \
+    cp /app/target/release/stardance /app/stardance
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
@@ -32,7 +32,7 @@ RUN useradd -u 1000 -m appuser
 USER appuser
 WORKDIR /app
 
-COPY --from=builder /app/flavortown_tracker /app/flavortown_tracker
+COPY --from=builder /app/stardance /app/stardance
 COPY --chown=appuser:appuser scripts/run-every-5min.sh /app/run-every-5min.sh
 RUN chmod +x /app/run-every-5min.sh
 

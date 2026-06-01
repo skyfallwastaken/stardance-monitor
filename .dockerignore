@@ -1,7 +1,7 @@
 target
 .git
 *.md
-flavortown-storage/
+stardance-storage/
 snap_*.json
 *.tgz
 **/node_modules
