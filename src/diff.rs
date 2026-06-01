@@ -460,6 +460,13 @@ impl ItemDiff {
     pub const fn is_empty(&self) -> bool {
         self.new_items.is_empty() && self.deleted_items.is_empty() && self.updated_items.is_empty()
     }
+
+    pub fn has_price_changes(&self) -> bool {
+        self.updated_items.iter().any(|(old, new)| {
+            prices_changed(&old.prices, &new.prices)
+                || accessories_have_price_change(&old.accessories, &new.accessories)
+        })
+    }
 }
 
 pub fn compute_diff(old_items: &ShopItems, new_items: &ShopItems) -> ItemDiff {

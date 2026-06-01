@@ -16,6 +16,6 @@ while true; do
     echo "$PROG exited with non-zero status at $(date --iso-8601=seconds)" >&2
   fi
 
-  sleep 100 &
+  sleep 60 &
   wait
 done

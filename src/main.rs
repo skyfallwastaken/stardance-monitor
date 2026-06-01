@@ -1,5 +1,6 @@
 use color_eyre::Result;
 use log::{info, warn};
+use std::{thread, time::Duration};
 
 mod config;
 mod diff;
@@ -8,6 +9,8 @@ mod mrkdwn;
 mod rails;
 mod scraper;
 mod storage;
+
+const PRICE_CHANGE_CONFIRMATION_DELAY: Duration = Duration::from_secs(45);
 
 fn main() -> Result<()> {
     dotenvy::dotenv().ok();
@@ -30,7 +33,19 @@ fn main() -> Result<()> {
 
     match old_snap {
         Some(old_snap) => {
-            let item_diff = diff::compute_diff(&old_snap, &items);
+            let mut items = items;
+            let mut item_diff = diff::compute_diff(&old_snap, &items);
+
+            if item_diff.has_price_changes() {
+                info!(
+                    "Price changes detected; waiting {} seconds and re-scraping before notifying",
+                    PRICE_CHANGE_CONFIRMATION_DELAY.as_secs()
+                );
+
+                thread::sleep(PRICE_CHANGE_CONFIRMATION_DELAY);
+                items = scraper::scrape()?;
+                item_diff = diff::compute_diff(&old_snap, &items);
+            }
 
             if item_diff.is_empty() {
                 info!("Items haven't changed - exiting!");
