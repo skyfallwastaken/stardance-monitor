@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::scraper::{Accessory, Region};
 use strum::VariantArray;
 
-pub const EMOJI_COOKIES: &str = ":cookie:";
+pub const EMOJI_STARDUST: &str = ":stardance_star:";
 pub const EMOJI_TROLLEY: &str = ":tw_shopping_trolley:";
 pub const EMOJI_NEW: &str = ":new:";
 pub const EMOJI_TRASH: &str = ":win10-trash:";
@@ -26,7 +26,12 @@ pub fn escape_markdown(text: &str) -> String {
 
 pub fn format_prices_with_flags(prices: &HashMap<Region, u32>) -> String {
     let mut price_entries: Vec<_> = prices.iter().collect();
-    price_entries.sort_by_key(|(r, _)| Region::VARIANTS.iter().position(|v| v == *r).unwrap_or(usize::MAX));
+    price_entries.sort_by_key(|(r, _)| {
+        Region::VARIANTS
+            .iter()
+            .position(|v| v == *r)
+            .unwrap_or(usize::MAX)
+    });
 
     match price_entries.as_slice() {
         [(region, price)] => format!("{} {price}", region.flag()),
@@ -50,7 +55,7 @@ pub fn item_header(emoji: &str, title: &str) -> String {
 
 pub fn format_price_line(prices: &HashMap<Region, u32>) -> String {
     format!(
-        "*Price:* {EMOJI_COOKIES} {}",
+        "*Price:* {EMOJI_STARDUST} {}",
         format_prices_with_flags(prices)
     )
 }
@@ -78,7 +83,7 @@ pub fn format_accessories(accessories: &[Accessory]) -> String {
                     format!("{} (free)", escape_markdown(&a.name))
                 } else {
                     format!(
-                        "{} ({EMOJI_COOKIES} {})",
+                        "{} ({EMOJI_STARDUST} {})",
                         escape_markdown(&a.name),
                         format_prices_with_flags(&a.prices)
                     )

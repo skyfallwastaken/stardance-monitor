@@ -334,7 +334,7 @@ fn render_updated_item(ctx: &UpdateContext) -> Vec<SlackBlock> {
 
     let price_line = if prices_changed(&old.prices, &new.prices) {
         format!(
-            "*Price:*\n_before:_ {EMOJI_COOKIES} {}\n_after:_ {EMOJI_COOKIES} {}",
+            "*Price:*\n_before:_ {EMOJI_STARDUST} {}\n_after:_ {EMOJI_STARDUST} {}",
             format_prices_with_flags(&old.prices),
             format_prices_with_flags(&new.prices)
         )

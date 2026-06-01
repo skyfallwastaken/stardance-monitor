@@ -1,5 +1,5 @@
-use scraper::node::Node;
 use scraper::ElementRef;
+use scraper::node::Node;
 
 pub fn html_to_mrkdwn(elem: ElementRef<'_>) -> String {
     let mut out = String::new();
