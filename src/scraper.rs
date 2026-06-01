@@ -124,6 +124,11 @@ fn parse_shop_item(element: ElementRef, region: &Region) -> Result<ShopItem> {
     let title = element
         .attr("data-shop-wishlist-item-name-value")
         .map(String::from)
+        .or_else(|| {
+            select_one(&element, ".shop-item-card__title")
+                .ok()
+                .map(|e| e.text().collect::<String>().trim().to_string())
+        })
         .or_else(|| select_one(&element, "h4").ok().map(|e| e.inner_html()))
         .ok_or_else(|| eyre!("missing item title"))?;
     let description = select_one(&element, "div.shop-item-card__description > p")
@@ -146,10 +151,29 @@ fn parse_shop_item(element: ElementRef, region: &Region) -> Result<ShopItem> {
                         .ok()
                 })
         })
+        .or_else(|| {
+            select_one(&element, ".shop-item-card__order-cta .action-btn__label")
+                .ok()
+                .and_then(|e| {
+                    e.text()
+                        .collect::<String>()
+                        .chars()
+                        .filter(char::is_ascii_digit)
+                        .collect::<String>()
+                        .parse()
+                        .ok()
+                })
+        })
         .ok_or_else(|| eyre!("missing price for item"))?;
     let image_url: Url = element
         .attr("data-shop-wishlist-item-image-value")
         .and_then(|v| CONFIG.base_url.join(v).ok())
+        .or_else(|| {
+            select_one(&element, "img.shop-item-card__image")
+                .ok()
+                .and_then(|e| e.attr("src"))
+                .and_then(|s| CONFIG.base_url.join(s).ok())
+        })
         .or_else(|| {
             select_one(&element, "div.shop-item-card__image > img")
                 .ok()
