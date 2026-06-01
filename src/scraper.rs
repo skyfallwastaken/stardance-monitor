@@ -108,9 +108,7 @@ impl ShopItem {
     pub fn buy_link(&self) -> Url {
         CONFIG
             .base_url
-            .join("shop/items")
-            .unwrap()
-            .join(self.id.to_string().as_str())
+            .join(&format!("shop/items/{}", self.id))
             .unwrap()
     }
 }
