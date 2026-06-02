@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
 use crate::config::CONFIG;
@@ -372,23 +372,44 @@ fn scrape_region(region: &Region, csrf_token: &str) -> Result<ShopItems> {
 
 pub fn scrape() -> Result<Vec<ShopItem>> {
     let mut items: HashMap<ShopItemId, ShopItem> = HashMap::new();
+    let mut items_with_accessories: HashSet<ShopItemId> = HashSet::new();
     let csrf_token = get_csrf_token()?;
 
     for region in Region::VARIANTS {
         debug!("Now scraping {region:?}");
         let region_items = scrape_region(region, &csrf_token)?;
 
+        let new_item_ids: HashSet<ShopItemId> = region_items
+            .iter()
+            .filter(|item| !items.contains_key(&item.id))
+            .map(|item| item.id)
+            .collect();
+
         for item in &region_items {
-            items.entry(item.id).or_insert_with(|| item.clone());
+            let regional_price = item.prices[region];
+            items
+                .entry(item.id)
+                .and_modify(|existing| {
+                    existing.prices.insert(region.clone(), regional_price);
+                })
+                .or_insert_with(|| item.clone());
         }
 
-        let item_ids: Vec<_> = region_items.iter().map(|i| i.id).collect();
-        let details: Vec<_> = item_ids
+        let ids_to_fetch: Vec<ShopItemId> = region_items
+            .iter()
+            .map(|i| i.id)
+            .filter(|id| new_item_ids.contains(id) || items_with_accessories.contains(id))
+            .collect();
+
+        let details: Vec<_> = ids_to_fetch
             .par_iter()
             .map(|&id| scrape_item_page_details_for_region(id, region).map(|d| (id, d)))
             .collect::<Result<Vec<_>>>()?;
 
         for (id, detail) in details {
+            if !detail.accessories.is_empty() {
+                items_with_accessories.insert(id);
+            }
             merge_item_details(items.get_mut(&id).unwrap(), detail, region);
         }
     }

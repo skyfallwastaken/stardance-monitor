@@ -10,7 +10,7 @@ mod rails;
 mod scraper;
 mod storage;
 
-const PRICE_CHANGE_CONFIRMATION_DELAY: Duration = Duration::from_secs(45);
+const RESCRAPE_CONFIRMATION_DELAY: Duration = Duration::from_secs(45);
 
 fn main() -> Result<()> {
     dotenvy::dotenv().ok();
@@ -36,13 +36,20 @@ fn main() -> Result<()> {
             let mut items = items;
             let mut item_diff = diff::compute_diff(&old_snap, &items);
 
-            if item_diff.has_price_changes() {
+            if item_diff.has_price_changes() || !item_diff.new_items.is_empty() {
+                let reason = if item_diff.has_price_changes() && !item_diff.new_items.is_empty() {
+                    "price changes and new items"
+                } else if item_diff.has_price_changes() {
+                    "price changes"
+                } else {
+                    "new items (letting per-region data propagate)"
+                };
                 info!(
-                    "Price changes detected; waiting {} seconds and re-scraping before notifying",
-                    PRICE_CHANGE_CONFIRMATION_DELAY.as_secs()
+                    "{reason} detected; waiting {} seconds and re-scraping before notifying",
+                    RESCRAPE_CONFIRMATION_DELAY.as_secs()
                 );
 
-                thread::sleep(PRICE_CHANGE_CONFIRMATION_DELAY);
+                thread::sleep(RESCRAPE_CONFIRMATION_DELAY);
                 items = scraper::scrape()?;
                 item_diff = diff::compute_diff(&old_snap, &items);
             }
