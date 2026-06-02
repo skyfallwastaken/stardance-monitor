@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::scraper::{Accessory, Region};
 use strum::VariantArray;
 
-pub const EMOJI_STARDUST: &str = ":stardance_star:";
+pub const EMOJI_STARDUST: &str = ":stardust:";
 pub const EMOJI_TROLLEY: &str = ":tw_shopping_trolley:";
 pub const EMOJI_NEW: &str = ":new:";
 pub const EMOJI_TRASH: &str = ":win10-trash:";

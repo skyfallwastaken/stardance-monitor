@@ -7,13 +7,14 @@ use color_eyre::Result;
 use log::{debug, info};
 use slack_morphism::prelude::*;
 
-/// Item IDs that should be tracked in snapshots but never included in notifications.
-const NOTIFICATION_IGNORED_IDS: &[ShopItemId] = &[187, 209, 204];
+/// item IDs that should be tracked in snapshots but never included in notifs
+/// (atm this is empty because the SD shop doesn't have nothings yet)
+const NOTIFICATION_IGNORED_IDS: &[ShopItemId] = &[];
 
-/// Stock threshold: only notify about stock changes when either old or new is at or below this.
+/// stock threshold: only notify about stock changes when either old or new is at or below this.
 const STOCK_NOTIFY_THRESHOLD: u32 = 7;
 
-/// Accessory names that are colours and should be ignored in notifications.
+/// accessory names that are colours and should be ignored in notifications.
 const COLOUR_NAMES: &[&str] = &[
     "black",
     "white",
@@ -43,9 +44,9 @@ const COLOUR_NAMES: &[&str] = &[
     "living coral (red/orange)",
 ];
 
-// ---------------------------------------------------------------------------
-// Notification filtering — single place that decides what's worth notifying
-// ---------------------------------------------------------------------------
+// ---------------
+// notif filtering
+// ---------------
 
 fn is_colour_name(name: &str) -> bool {
     COLOUR_NAMES.iter().any(|c| name.eq_ignore_ascii_case(c))
@@ -55,7 +56,7 @@ fn is_free(acc: &Accessory) -> bool {
     acc.prices.values().all(|&p| p == 0)
 }
 
-/// An accessory change is ignorable when the name is a colour, or both sides are free.
+/// an accessory change is ignorable when the name is a colour, or both sides are free.
 fn is_ignorable_accessory(old: Option<&Accessory>, new: Option<&Accessory>) -> bool {
     let name = new.or(old).map(|a| a.name.as_str()).unwrap_or("");
     if is_colour_name(name) {
@@ -64,7 +65,7 @@ fn is_ignorable_accessory(old: Option<&Accessory>, new: Option<&Accessory>) -> b
     matches!((old, new), (Some(o), Some(n)) if is_free(o) && is_free(n))
 }
 
-/// A stock change is notifiable when either side is ≤ threshold or involves unlimited.
+/// a stock change is notifiable when either side is ≤ threshold or involves unlimited.
 fn is_notifiable_stock(old: Option<u32>, new: Option<u32>) -> bool {
     match (old, new) {
         (Some(o), Some(n)) if o == n => false,
@@ -74,7 +75,7 @@ fn is_notifiable_stock(old: Option<u32>, new: Option<u32>) -> bool {
     }
 }
 
-/// Pre-filtered view of an `ItemDiff` containing only changes worth notifying about.
+/// pre-filtered view of an `ItemDiff` containing only changes worth notifying about.
 struct NotifiableDiff<'a> {
     new_items: Vec<&'a ShopItem>,
     deleted_items: Vec<&'a ShopItem>,
@@ -86,13 +87,13 @@ struct UpdateContext<'a> {
     old: &'a ShopItem,
     new: &'a ShopItem,
     accessories_changed: bool,
-    /// Accessory change involves a non-free price change (warrants a channel ping).
+    /// accessory change involves a non-free price change (warrants a channel ping).
     accessories_price_changed: bool,
     stock_changed: bool,
 }
 
 impl<'a> UpdateContext<'a> {
-    /// True if something beyond stock/description/image changed (warrants a channel ping).
+    /// true if something beyond stock/description/image changed (warrants a channel ping).
     fn has_significant_change(&self) -> bool {
         self.old.title != self.new.title
             || prices_changed(&self.old.prices, &self.new.prices)
@@ -100,7 +101,7 @@ impl<'a> UpdateContext<'a> {
             || self.old.achievement_lock != self.new.achievement_lock
     }
 
-    /// True if stock went to/from zero (warrants a channel ping).
+    /// true if stock went to/from zero (warrants a channel ping).
     fn has_critical_stock_change(&self) -> bool {
         self.stock_changed
             && matches!(
