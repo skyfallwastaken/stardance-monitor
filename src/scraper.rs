@@ -120,6 +120,18 @@ fn select_one<'a>(element: &'a ElementRef, selector: &str) -> Result<ElementRef<
         .ok_or_else(|| eyre!("missing element: {}", selector))
 }
 
+fn parse_price_text(text: &str) -> Option<u32> {
+    text.chars()
+        .filter(char::is_ascii_digit)
+        .collect::<String>()
+        .parse()
+        .ok()
+}
+
+fn parse_text_price_element(element: ElementRef) -> Option<u32> {
+    parse_price_text(&element.text().collect::<String>())
+}
+
 fn parse_shop_item(element: ElementRef, region: &Region) -> Result<ShopItem> {
     let title = element
         .attr("data-shop-wishlist-item-name-value")
@@ -136,33 +148,27 @@ fn parse_shop_item(element: ElementRef, region: &Region) -> Result<ShopItem> {
         .map(|el| crate::mrkdwn::html_to_mrkdwn(el))
         .unwrap_or_default();
     let price: u32 = element
-        .attr("data-shop-wishlist-item-price-value")
-        .and_then(|v| v.parse().ok())
-        .or_else(|| {
-            select_one(&element, "span.shop-item-card__price")
-                .ok()
-                .and_then(|e| {
-                    e.text()
-                        .collect::<String>()
-                        .chars()
-                        .filter(char::is_ascii_digit)
-                        .collect::<String>()
-                        .parse()
-                        .ok()
-                })
-        })
+        .attr("data-price")
+        .and_then(parse_price_text)
         .or_else(|| {
             select_one(&element, ".shop-item-card__order-cta .action-btn__label")
                 .ok()
-                .and_then(|e| {
-                    e.text()
-                        .collect::<String>()
-                        .chars()
-                        .filter(char::is_ascii_digit)
-                        .collect::<String>()
-                        .parse()
-                        .ok()
+                .and_then(parse_text_price_element)
+        })
+        .or_else(|| {
+            element
+                .attr("data-shop-wishlist-item-price-value")
+                .and_then(parse_price_text)
+        })
+        .or_else(|| {
+            element
+                .select(&Selector::parse("span.shop-item-card__price").unwrap())
+                .filter(|e| {
+                    !e.attr("class")
+                        .unwrap_or_default()
+                        .contains("shop-item-card__price--strike")
                 })
+                .find_map(parse_text_price_element)
         })
         .ok_or_else(|| eyre!("missing price for item"))?;
     let image_url: Url = element
@@ -427,4 +433,78 @@ pub fn scrape() -> Result<Vec<ShopItem>> {
     let mut items = items.into_values().collect::<ShopItems>();
     items.sort_by_key(|item| item.id);
     Ok(items)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const IMAGE_HTML: &str = r#"
+        <div class="shop-item-card__image">
+            <img src="https://example.com/rails/active_storage/representations/proxy/eyJfcmFpbHMiOnsiZGF0YSI6MX19--blob/variation--sig/image.png" />
+        </div>
+    "#;
+
+    fn parse_single_card(card_html: &str) -> ShopItem {
+        let document = Html::parse_fragment(card_html);
+        let element = document
+            .select(&Selector::parse(".shop-item-card").unwrap())
+            .next()
+            .unwrap();
+        parse_shop_item(element, &Region::UnitedStates).unwrap()
+    }
+
+    #[test]
+    fn sale_card_uses_data_price_instead_of_struck_original_price() {
+        let item = parse_single_card(&format!(
+            r#"
+            <div class="shop-item-card shop-item-card--on-sale" data-price="199" data-shop-id="63">
+                {IMAGE_HTML}
+                <h3 class="shop-item-card__title">GitHub Notebook</h3>
+                <div class="shop-item-card__description"><p>git commit -m “writing a note here”</p></div>
+                <span class="shop-item-card__price shop-item-card__price--strike">
+                    <span class="shop-item-card__original-price">326</span>
+                </span>
+                <button class="shop-item-card__order-cta"><span class="action-btn__label">199</span></button>
+            </div>
+            "#
+        ));
+
+        assert_eq!(item.prices[&Region::UnitedStates], 199);
+    }
+
+    #[test]
+    fn sale_card_uses_cta_price_before_struck_original_price() {
+        let item = parse_single_card(&format!(
+            r#"
+            <div class="shop-item-card shop-item-card--on-sale" data-shop-id="63">
+                {IMAGE_HTML}
+                <h3 class="shop-item-card__title">GitHub Notebook</h3>
+                <div class="shop-item-card__description"><p>git commit -m “writing a note here”</p></div>
+                <span class="shop-item-card__price shop-item-card__price--strike">
+                    <span class="shop-item-card__original-price">326</span>
+                </span>
+                <button class="shop-item-card__order-cta"><span class="action-btn__label">199</span></button>
+            </div>
+            "#
+        ));
+
+        assert_eq!(item.prices[&Region::UnitedStates], 199);
+    }
+
+    #[test]
+    fn non_sale_card_can_fall_back_to_visible_price() {
+        let item = parse_single_card(&format!(
+            r#"
+            <div class="shop-item-card" data-shop-id="10">
+                {IMAGE_HTML}
+                <h3 class="shop-item-card__title">Regular Item</h3>
+                <div class="shop-item-card__description"><p>no sale</p></div>
+                <span class="shop-item-card__price">400</span>
+            </div>
+            "#
+        ));
+
+        assert_eq!(item.prices[&Region::UnitedStates], 400);
+    }
 }
